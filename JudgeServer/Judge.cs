@@ -16,97 +16,167 @@ namespace JudgeServer {
         }
 
         private static JudgeResult JudgeC(JudgeRequest request) {
-            Console.WriteLine("JudgeC is Called");
 
+            // 반환할 객체
             JudgeResult result = new JudgeResult();
 
-            // 입력 값을 저장할 파일 이름
-            string inputData = "0 10";
+            // TODO : 채점 DB에서 입출력 테스트 케이스, 실행 시간 제한, 메모리 사용량 제한 받아오기
+            // TODO : 채점 DB에서 가져오는 값들이 교수가 과제를 등록할 때 정할 수 있다면, 정해진 값들만 사용하도록 코드 개선 필요
+            // 입력 테스트 케이스
+            List<string> inputCases = new List<string>() { "1 2", "5 9", "-3 3" };
+            // 출력 테스트 케이스
+            List<string> outputCases = new List<string>() { "3", "14", "0" };
+            // 실행 시간(ms) 제한 - 500ms
+            double executionTimeLimit = 500;
+            // 메모리 사용량(B) 제한 - 512B
+            long memoryUsageLimit = 512;
 
-            // C11 컴파일러를 실행하여 C 코드를 컴파일합니다.
-            ProcessStartInfo psi = new ProcessStartInfo("C:\\MinGW\\bin\\gcc", "hello.c -o hello -O2 -Wall -lm -static -std=gnu11");
+            // .c 파일이 저장될 경로
+            string cFilePath = Environment.CurrentDirectory + "\\file.c";
+            // .c 파일의 실행 파일인 .exe 파일이 저장될 경로
+            string exeFilePath = Environment.CurrentDirectory + "\\file.exe";
+            // 전달받은 코드로 .c 파일 생성하기
+            File.WriteAllText(cFilePath, request.Code);
+
+            // 컴파일러 경로
+            string gccCompilerPath = "C:\\MinGW\\bin\\gcc";
+
+            // C11 컴파일러를 실행하여 C 코드를 컴파일하여 실행 파일 생성
+            ProcessStartInfo psi = new ProcessStartInfo(gccCompilerPath, cFilePath + " -o" + exeFilePath + " -O2 -Wall -lm -static -std=gnu11");
             psi.RedirectStandardOutput = true;
             psi.RedirectStandardError = true;
             psi.UseShellExecute = false;
             Process? process = Process.Start(psi);
 
-            if (process == null) {
-                Console.WriteLine("Process is null");
-                result.IsSuccess = false;
-                return result;
-            }
-
+            // 예외처리 필요
             process.WaitForExit();
 
             // 컴파일 실패
             if (process.ExitCode != 0) {
-                string errors = process.StandardError.ReadToEnd();
                 Console.WriteLine("Compile Failed");
+                string errors = process.StandardError.ReadToEnd();
                 Console.WriteLine($"{errors}");
+
                 result.IsSuccess = false;
                 result.CompileErrorMsg = errors;
                 return result;
-            } else {
-                string output = process.StandardOutput.ReadToEnd();
+            } 
+            // 컴파일 성공
+            else {
                 Console.WriteLine("Compile Successed");
-                Console.WriteLine($"{output}");
+                //string output = process.StandardOutput.ReadToEnd();
+                //Console.WriteLine($"{output}");
             }
 
-            // 생성된 실행 파일을 실행합니다.
-            ProcessStartInfo psi2 = new ProcessStartInfo("./hello");
-            psi2.RedirectStandardOutput = true;
-            psi2.RedirectStandardError = true;
-            psi2.RedirectStandardInput = true;
-            psi2.UseShellExecute = false;
-            Process? process2 = Process.Start(psi2);
+            // 테스트 케이스들의 평균 실행 시간과 메모리 사용량
+            double avgExecutionTime = 0;
+            long avgMemoryUsage = 0;
 
-            if (process2 == null) {
-                Console.WriteLine("Process is null");
-                result.IsSuccess = false;
-                return result;
-            }
+            // 생성된 실행 파일을 테스트 케이스 만큼 실행
+            for (int i = 0; i < inputCases.Count(); i++) {
+                ProcessStartInfo psi2 = new ProcessStartInfo(exeFilePath);
+                psi2.RedirectStandardOutput = true;
+                psi2.RedirectStandardError = true;
+                psi2.RedirectStandardInput = true;
+                psi2.UseShellExecute = false;
+                Process? process2 = Process.Start(psi2);
 
-            using (StreamWriter writer2 = process2.StandardInput) {
-                writer2.Write(inputData);
-            }
+                // 예외처리 필요
+                // input case 적용
+                using (StreamWriter writer2 = process2.StandardInput) {
+                    writer2.Write(inputCases[i]);
+                }
 
-            // 실행파일 실행
-            try {
-                // 실행 프로세스가 끝날 때까지 대기.
+                // 스톱워치 시작
+                Stopwatch watch = new Stopwatch();
+                watch.Start();
+
+                // 프로세스 실행 전의 메모리 사용량 측정
+                long memoryUsageBefore = process2.WorkingSet64;
+
+                // 프로세스 실행
                 process2.WaitForExit();
 
-                // 실행 프로세스가 실패할 때
+                // 스톱워치를 멈춰 걸린 시간으로 실행 시간 측정
+                watch.Stop();
+                double executionTime = watch.ElapsedMilliseconds;
+                avgExecutionTime += executionTime;
+
+                // 프로세스 실행 후의 메모리 사용량 측정
+                long memoryUsageAfter = process2.WorkingSet64;
+
+                // 메모리 사용량 계산
+                long memoryUsage = memoryUsageAfter - memoryUsageBefore;
+                avgMemoryUsage += memoryUsage;
+
+                // 실행 실패 - 런타임 에러
                 if (process2.ExitCode != 0) {
                     string errors = process2.StandardError.ReadToEnd();
                     Console.WriteLine("Runtime Error");
                     Console.WriteLine($"{errors}");
+
                     result.IsSuccess = false;
                     result.RuntimeErrorMsg = errors;
                     return result;
-
-                // 실행 프로세스가 성공적으로 끝날 때
-                } else {
-                    string output = process2.StandardOutput.ReadToEnd();
-                    Console.WriteLine(output);
-
-                    // 추가적으로 채점 수행
-                    result.IsSuccess = true;
-                    result.IsCorrect = true;
-                    result.ExecutionTime = 800;
-                    result.MemoryUsage = 32;
-                    return result;
                 }
+                // 실행 성공
+                else {
+                    string output = process2.StandardOutput.ReadToEnd();
+                    Console.WriteLine("실행 결과 : " + output);
+                    Console.WriteLine("실행 시간(ms) : " + executionTime);
+                    Console.WriteLine("메모리 사용량(byte) : " + memoryUsage);
 
-                // 실행 중에 예외 발생 처리
-            } catch (Exception ex) {
-                Console.WriteLine("An exception occurred while running the program");
-                Console.WriteLine($"Exception message: {ex.Message}");
-                result.IsSuccess = false;
-                return result;
-            } finally {
-                // 실행파일 제거
-                File.Delete("hello.exe");
+                    // TODO : 추가적으로 채점 수행 필요
+                    // 시간 초과
+                    if (executionTime > executionTimeLimit) {
+                        Console.WriteLine("시간 초과");
+
+                        result.IsSuccess = false;
+                        return result;
+                    }
+
+                    // 메모리 사용량 초과
+                    if (memoryUsage > memoryUsageLimit) {
+                        Console.WriteLine("메모리 사용량 초과");
+
+                        result.IsSuccess = false;
+                        return result;
+                    }
+
+                    Console.WriteLine("output : " + output);
+                    Console.WriteLine("outputCase : " + outputCases[i]);
+
+                    // 정답 맞춤
+                    if (output == outputCases[i]) {
+                        Console.WriteLine(i + "번째 테스트 케이스가 맞았습니다.");
+                    }
+                    // 정답 틀림
+                    else {
+                        Console.WriteLine("틀렸습니다.");
+
+                        result.IsSuccess = true;
+                        result.IsCorrect = false;
+                        return result;
+                    }
+                }
             }
+
+            // 생성했던 파일 삭제
+            File.Delete(cFilePath);
+            File.Delete(exeFilePath);
+
+            avgExecutionTime /= inputCases.Count();
+            avgMemoryUsage /= inputCases.Count();
+
+            Console.WriteLine("avgExecutionTime : " + avgExecutionTime);
+            Console.WriteLine("avgMemoryUsage : " + avgMemoryUsage);
+
+            // 모든 테스트 케이스를 통과
+            result.IsSuccess = true;
+            result.IsCorrect = true;
+            result.ExecutionTime = avgExecutionTime;
+            result.MemoryUsage = avgMemoryUsage;
+            return result;
         }
 
         private static JudgeResult JudgeCpp(JudgeRequest request) {
