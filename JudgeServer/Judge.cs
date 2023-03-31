@@ -57,15 +57,13 @@ namespace JudgeServer {
                 string errors = process.StandardError.ReadToEnd();
                 Console.WriteLine($"{errors}");
 
-                result.IsSuccess = false;
+                result.IsCorrect = false;
                 result.CompileErrorMsg = errors;
                 return result;
             } 
             // 컴파일 성공
             else {
                 Console.WriteLine("Compile Successed");
-                //string output = process.StandardOutput.ReadToEnd();
-                //Console.WriteLine($"{output}");
             }
 
             // 테스트 케이스들의 평균 실행 시간과 메모리 사용량
@@ -115,9 +113,9 @@ namespace JudgeServer {
                     Console.WriteLine("Runtime Error");
                     Console.WriteLine($"{errors}");
 
-                    result.IsSuccess = false;
+                    result.IsCorrect = false;
                     result.RuntimeErrorMsg = errors;
-                    return result;
+                    break;
                 }
                 // 실행 성공
                 else {
@@ -131,16 +129,18 @@ namespace JudgeServer {
                     if (executionTime > executionTimeLimit) {
                         Console.WriteLine("시간 초과");
 
-                        result.IsSuccess = false;
-                        return result;
+                        result.IsCorrect = false;
+                        result.IsTimeOut = true;
+                        break;
                     }
 
                     // 메모리 사용량 초과
                     if (memoryUsage > memoryUsageLimit) {
                         Console.WriteLine("메모리 사용량 초과");
 
-                        result.IsSuccess = false;
-                        return result;
+                        result.IsCorrect = false;
+                        result.IsExceedMemory = true;
+                        break;
                     }
 
                     Console.WriteLine("output : " + output);
@@ -149,14 +149,15 @@ namespace JudgeServer {
                     // 정답 맞춤
                     if (output == outputCases[i]) {
                         Console.WriteLine(i + "번째 테스트 케이스가 맞았습니다.");
+
+                        result.IsCorrect = true;
                     }
                     // 정답 틀림
                     else {
                         Console.WriteLine("틀렸습니다.");
 
-                        result.IsSuccess = true;
                         result.IsCorrect = false;
-                        return result;
+                        break;
                     }
                 }
             }
@@ -165,18 +166,24 @@ namespace JudgeServer {
             File.Delete(cFilePath);
             File.Delete(exeFilePath);
 
-            avgExecutionTime /= inputCases.Count();
-            avgMemoryUsage /= inputCases.Count();
+            // 테스트 케이스를 통과하지 못하여 break로 for문을 빠져나온 상태
+            if (result.IsCorrect == false) {
+                return result;
+            }
+            // 테스트 케이스를 모두 통과한 상태
+            else {
+                avgExecutionTime /= inputCases.Count();
+                avgMemoryUsage /= inputCases.Count();
 
-            Console.WriteLine("avgExecutionTime : " + avgExecutionTime);
-            Console.WriteLine("avgMemoryUsage : " + avgMemoryUsage);
+                Console.WriteLine("avgExecutionTime : " + avgExecutionTime);
+                Console.WriteLine("avgMemoryUsage : " + avgMemoryUsage);
 
-            // 모든 테스트 케이스를 통과
-            result.IsSuccess = true;
-            result.IsCorrect = true;
-            result.ExecutionTime = avgExecutionTime;
-            result.MemoryUsage = avgMemoryUsage;
-            return result;
+                // 모든 테스트 케이스를 통과
+                result.ExecutionTime = avgExecutionTime;
+                result.MemoryUsage = avgMemoryUsage;
+
+                return result;
+            }
         }
 
         private static JudgeResult JudgeCpp(JudgeRequest request) {
