@@ -16,7 +16,6 @@ namespace JudgeServer {
         }
 
         private static JudgeResult JudgeC(JudgeRequest request) {
-
             // 반환할 객체
             JudgeResult result = new JudgeResult();
 
@@ -42,25 +41,25 @@ namespace JudgeServer {
             string gccCompilerPath = "C:\\MinGW\\bin\\gcc";
 
             // C11 컴파일러를 실행하여 C 코드를 컴파일하여 실행 파일 생성
-            ProcessStartInfo psi = new ProcessStartInfo(gccCompilerPath, cFilePath + " -o" + exeFilePath + " -O2 -Wall -lm -static -std=gnu11");
-            psi.RedirectStandardOutput = true;
-            psi.RedirectStandardError = true;
-            psi.UseShellExecute = false;
-            Process? process = Process.Start(psi);
+            ProcessStartInfo compilePsi = new ProcessStartInfo(gccCompilerPath, cFilePath + " -o" + exeFilePath + " -O2 -Wall -lm -static -std=gnu11");
+            compilePsi.RedirectStandardOutput = true;
+            compilePsi.RedirectStandardError = true;
+            compilePsi.UseShellExecute = false;
+            Process? compileProcess = Process.Start(compilePsi);
 
             // 예외처리 필요
-            process.WaitForExit();
+            compileProcess.WaitForExit();
 
-            // 컴파일 실패
-            if (process.ExitCode != 0) {
+            // 컴파일 에러
+            if (compileProcess.ExitCode != 0) {
+                string errors = compileProcess.StandardError.ReadToEnd();
                 Console.WriteLine("Compile Failed");
-                string errors = process.StandardError.ReadToEnd();
                 Console.WriteLine($"{errors}");
 
-                result.IsCorrect = false;
-                result.CompileErrorMsg = errors;
+                result.Result = JudgeResult.JResult.CompileError;
+                result.Message = errors;
                 return result;
-            } 
+            }
             // 컴파일 성공
             else {
                 Console.WriteLine("Compile Successed");
@@ -72,16 +71,17 @@ namespace JudgeServer {
 
             // 생성된 실행 파일을 테스트 케이스 만큼 실행
             for (int i = 0; i < inputCases.Count(); i++) {
-                ProcessStartInfo psi2 = new ProcessStartInfo(exeFilePath);
-                psi2.RedirectStandardOutput = true;
-                psi2.RedirectStandardError = true;
-                psi2.RedirectStandardInput = true;
-                psi2.UseShellExecute = false;
-                Process? process2 = Process.Start(psi2);
+                Console.WriteLine(i + "번째 테스트 케이스 시작");
+                ProcessStartInfo executePsi = new ProcessStartInfo(exeFilePath);
+                executePsi.RedirectStandardOutput = true;
+                executePsi.RedirectStandardError = true;
+                executePsi.RedirectStandardInput = true;
+                executePsi.UseShellExecute = false;
+                Process? executeProcess = Process.Start(executePsi);
 
                 // 예외처리 필요
                 // input case 적용
-                using (StreamWriter writer2 = process2.StandardInput) {
+                using (StreamWriter writer2 = executeProcess.StandardInput) {
                     writer2.Write(inputCases[i]);
                 }
 
@@ -90,10 +90,10 @@ namespace JudgeServer {
                 watch.Start();
 
                 // 프로세스 실행 전의 메모리 사용량 측정
-                long memoryUsageBefore = process2.WorkingSet64;
+                long memoryUsageBefore = executeProcess.WorkingSet64;
 
                 // 프로세스 실행
-                process2.WaitForExit();
+                executeProcess.WaitForExit();
 
                 // 스톱워치를 멈춰 걸린 시간으로 실행 시간 측정
                 watch.Stop();
@@ -101,36 +101,32 @@ namespace JudgeServer {
                 avgExecutionTime += executionTime;
 
                 // 프로세스 실행 후의 메모리 사용량 측정
-                long memoryUsageAfter = process2.WorkingSet64;
+                long memoryUsageAfter = executeProcess.WorkingSet64;
 
                 // 메모리 사용량 계산
                 long memoryUsage = memoryUsageAfter - memoryUsageBefore;
                 avgMemoryUsage += memoryUsage;
 
                 // 실행 실패 - 런타임 에러
-                if (process2.ExitCode != 0) {
-                    string errors = process2.StandardError.ReadToEnd();
+                if (executeProcess.ExitCode != 0) {
+                    string errors = executeProcess.StandardError.ReadToEnd();
                     Console.WriteLine("Runtime Error");
-                    Console.WriteLine($"{errors}");
+                    Console.WriteLine(errors);
 
-                    result.IsCorrect = false;
-                    result.RuntimeErrorMsg = errors;
+                    result.Result = JudgeResult.JResult.RuntimeError;
+                    result.Message = errors;
                     break;
                 }
                 // 실행 성공
                 else {
-                    string output = process2.StandardOutput.ReadToEnd();
-                    Console.WriteLine("실행 결과 : " + output);
-                    Console.WriteLine("실행 시간(ms) : " + executionTime);
-                    Console.WriteLine("메모리 사용량(byte) : " + memoryUsage);
+                    string output = executeProcess.StandardOutput.ReadToEnd();
 
                     // TODO : 추가적으로 채점 수행 필요
                     // 시간 초과
                     if (executionTime > executionTimeLimit) {
                         Console.WriteLine("시간 초과");
 
-                        result.IsCorrect = false;
-                        result.IsTimeOut = true;
+                        result.Result = JudgeResult.JResult.TimeLimitExceeded;
                         break;
                     }
 
@@ -138,8 +134,7 @@ namespace JudgeServer {
                     if (memoryUsage > memoryUsageLimit) {
                         Console.WriteLine("메모리 사용량 초과");
 
-                        result.IsCorrect = false;
-                        result.IsExceedMemory = true;
+                        result.Result = JudgeResult.JResult.MemoryLimitExceeded;
                         break;
                     }
 
@@ -150,13 +145,13 @@ namespace JudgeServer {
                     if (output == outputCases[i]) {
                         Console.WriteLine(i + "번째 테스트 케이스가 맞았습니다.");
 
-                        result.IsCorrect = true;
+                        result.Result = JudgeResult.JResult.Accepted;
                     }
                     // 정답 틀림
                     else {
-                        Console.WriteLine("틀렸습니다.");
+                        Console.WriteLine(i + "번째 테스트 케이스가 틀렸습니다.");
 
-                        result.IsCorrect = false;
+                        result.Result = JudgeResult.JResult.WrongAnswer;
                         break;
                     }
                 }
@@ -167,7 +162,7 @@ namespace JudgeServer {
             File.Delete(exeFilePath);
 
             // 테스트 케이스를 통과하지 못하여 break로 for문을 빠져나온 상태
-            if (result.IsCorrect == false) {
+            if (result.Result != JudgeResult.JResult.Accepted) {
                 return result;
             }
             // 테스트 케이스를 모두 통과한 상태
