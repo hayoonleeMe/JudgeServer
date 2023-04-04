@@ -2,6 +2,11 @@
 using Microsoft.CodeAnalysis;
 using System.Diagnostics;
 using System.Reflection;
+using Docker.DotNet;
+using Docker.DotNet.Models;
+using System.ComponentModel;
+using System.Text;
+using System;
 
 namespace JudgeServer {
     public class Judge {
@@ -17,11 +22,14 @@ namespace JudgeServer {
         // 이 Dictionary 객체를 언어 문자열로 인덱싱하여 JudgeRequest 객체를 인자로 전달하여 사용
         // Ex) JudgeResult result = JudgeHandler["c"](request); == JudgeC(request)
         public static Dictionary<string, Func<JudgeRequest, JudgeResult>> JudgeHandler;
+        public static Dictionary<string, Func<JudgeRequest, Task<JudgeResult>>> TaskJudgeHandler;
 
         // static class의 생성자
         static Judge() {
             // Judge 함수 Handler를 초기화
-            JudgeHandler = new Dictionary<string, Func<JudgeRequest, JudgeResult>>() {
+            //JudgeHandler = new Dictionary<string, Func<JudgeRequest, JudgeResult>>() {
+            //    { C, JudgeC }, { CPP, JudgeCpp }, { CSHARP, JudgeCSharp }, { JAVA, JudgeJava }, { PYTHON, JudgePython },};
+            TaskJudgeHandler = new Dictionary<string, Func<JudgeRequest, Task<JudgeResult>>>() {
                 { C, JudgeC }, { CPP, JudgeCpp }, { CSHARP, JudgeCSharp }, { JAVA, JudgeJava }, { PYTHON, JudgePython },};
         }
 
@@ -50,7 +58,7 @@ namespace JudgeServer {
 
             // 컴파일러 경로
             string gccCompilerPath = "C:\\MinGW\\bin\\gcc";
-
+            
             // C11 컴파일러를 실행하여 C 코드를 컴파일하여 실행 파일 생성
             ProcessStartInfo compilePsi = new ProcessStartInfo(gccCompilerPath, cFilePath + " -o" + exeFilePath + " -O2 -Wall -lm -static -std=gnu11");
             compilePsi.RedirectStandardOutput = true;
@@ -191,17 +199,138 @@ namespace JudgeServer {
             }
         }
 
-        private static JudgeResult JudgeC(JudgeRequest request) {
-            return new JudgeResult();
+        private static async Task<JudgeResult> JudgeC(JudgeRequest request) {
+            //// Docker client 생성
+            //var client = new DockerClientConfiguration(new Uri("unix:///var/run/docker.sock")).CreateClient();
+
+            //// 이미지 이름 및 태그 설정
+            //string imageName = "your-image-name:your-image-tag";
+
+            //// 이미지 빌드
+            //using (var dockerfileStream = File.OpenRead("Dockerfile")) {
+            //    var imageBuildParameters = new ImageBuildParameters { Tags = new List<string> { imageName } };
+            //    var progress = new Progress<JSONMessage>(message => {
+            //        // 여기서 필요한 경우 이미지 빌드 로그 처리를 할 수 있습니다.
+            //        Console.WriteLine(message.Status);
+            //    });
+
+            //    await client.Images.BuildImageFromDockerfileAsync(imageBuildParameters, dockerfileStream, null, null, progress, CancellationToken.None);
+            //}
+
+            //// 컨테이너 생성
+            //var containerConfig = new CreateContainerParameters {
+            //    Image = imageName,
+            //    AttachStdin = true,
+            //    AttachStdout = true,
+            //    AttachStderr = true,
+            //    Tty = true,
+            //    Cmd = new List<string> { "sh", "run.sh" }, // 컨테이너에서 실행할 명령입니다.
+            //    OpenStdin = true,
+            //    StdinOnce = true
+            //};
+            //var container = await client.Containers.CreateContainerAsync(containerConfig);
+
+            //// 컨테이너 시작
+            //await client.Containers.StartContainerAsync(container.ID, new ContainerStartParameters());
+
+            //// 컨테이너 로그 가져오기
+            //var containerLogsParameters = new ContainerLogsParameters {
+            //    ShowStdout = true,
+            //    ShowStderr = true,
+            //    Follow = true
+            //};
+
+            //string result;
+
+            //using (var logsStream = await client.Containers.GetContainerLogsAsync(container.ID, containerLogsParameters))
+            //using (var logsReader = new StreamReader(logsStream)) {
+            //    result = await logsReader.ReadToEndAsync();
+            //    Console.WriteLine(result);
+            //}
+
+            //// 컨테이너 정지 및 삭제
+            //await client.Containers.StopContainerAsync(container.ID, new ContainerStopParameters());
+            //await client.Containers.RemoveContainerAsync(container.ID, new ContainerRemoveParameters());
+
+            // 반환할 객체
+            JudgeResult result = new JudgeResult();
+
+            // TODO : 채점 DB에서 입출력 테스트 케이스, 실행 시간 제한, 메모리 사용량 제한 받아오기
+            // TODO : 채점 DB에서 가져오는 값들이 교수가 과제를 등록할 때 정할 수 있다면, 정해진 값들만 사용하도록 코드 개선 필요
+            // 입력 테스트 케이스
+            List<string> inputCases = new List<string>() { "1 2", "5 9", "-3 3" };
+            // 출력 테스트 케이스
+            List<string> outputCases = new List<string>() { "3", "14", "0" };
+            // 실행 시간(ms) 제한 - 500ms
+            double executionTimeLimit = 500;
+            // 메모리 사용량(B) 제한 - 512B
+            long memoryUsageLimit = 512;
+
+            // .c 파일이 저장될 경로
+            string cFilePath = Environment.CurrentDirectory + "\\code.c";
+            // 전달받은 코드로 .c 파일 생성하기
+            File.WriteAllText(cFilePath, request.Code);
+
+            // Docker client 생성
+            using var client = new DockerClientConfiguration(new Uri("npipe://./pipe/docker_engine")).CreateClient();
+
+            // 컨테이너 생성
+            var containerConfig = new CreateContainerParameters {
+                Image = "c-compiler",
+                Cmd = new[] { "/bin/bash", "-c", "gcc /src/code.c -o /src/output -02 -Wall -lm -static -std=gnu11 && /src/output" },
+                Tty = true,
+                OpenStdin = true,
+                AttachStdin = true,
+                HostConfig = new HostConfig {
+                    Binds = new[] { $"{Path.GetFullPath("code")}:/src" }
+                }
+            };
+            var container = await client.Containers.CreateContainerAsync(containerConfig);
+
+            // 컨테이너 실행
+            await client.Containers.StartContainerAsync(container.ID, new ContainerStartParameters());
+
+            // 컨테이너에 연결하고 스트림을 가져옵니다.
+            var stream = await client.Containers.AttachContainerAsync(container.ID, true, new ContainerAttachParameters { Stdin = true, Stream = true });
+
+            // 사용자가 제공하는 입력 값을 가져옵니다.
+            string input = "YOUR_INPUT_HERE";
+
+            // 입력 값을 바이트 배열로 변환합니다.
+            byte[] inputBytes = Encoding.ASCII.GetBytes(input);
+
+            // 스트림에 입력 값을 작성합니다.
+            await stream.WriteAsync(inputBytes, 0, inputBytes.Length, CancellationToken.None);
+
+            // 작성이 완료되면 스트림을 닫습니다.
+            stream.Dispose();
+
+            // 컨테이너 로그 가져오기
+            using var logsStream = await client.Containers.GetContainerLogsAsync(container.ID, new ContainerLogsParameters { ShowStdout = true, ShowStderr = true });
+            using var reader = new StreamReader(logsStream);
+            string logs = await reader.ReadToEndAsync();
+
+            // 출력 확인
+            Console.WriteLine("Container logs:");
+            Console.WriteLine(logs);
+
+            // 컨테이너 정리
+            //await client.Containers.RemoveContainerAsync(container.ID, new ContainerRemoveParameters { Force = true });
+
+            // 컨테이너 정지 및 삭제
+            await client.Containers.StopContainerAsync(container.ID, new ContainerStopParameters());
+            await client.Containers.RemoveContainerAsync(container.ID, new ContainerRemoveParameters());
+
+            return result;
         }
 
         // C++ 코드 채점
-        private static JudgeResult JudgeCpp(JudgeRequest request) {
+        private static async Task<JudgeResult> JudgeCpp(JudgeRequest request) {
             return new JudgeResult();
         }
 
         // C# 코드 채점
-        private static JudgeResult JudgeCSharp(JudgeRequest request) {
+        private static async Task<JudgeResult> JudgeCSharp(JudgeRequest request) {
             // 반환할 객체
             JudgeResult result = new JudgeResult();
 
@@ -390,12 +519,12 @@ namespace JudgeServer {
         }
 
         // Java 코드 채점
-        private static JudgeResult JudgeJava(JudgeRequest request) {
+        private static async Task<JudgeResult> JudgeJava(JudgeRequest request) {
             return new JudgeResult();
         }
 
         // Python 코드 채점
-        private static JudgeResult JudgePython(JudgeRequest request) {
+        private static async Task<JudgeResult> JudgePython(JudgeRequest request) {
             return new JudgeResult();
         }
     }

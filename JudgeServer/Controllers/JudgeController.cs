@@ -22,9 +22,9 @@ namespace JudgeServer.Controllers {
         }
 
         // 비동기로 채점을 수행함
-        private JudgeResult JudgeAsync(JudgeRequest request) {
+        private Task<JudgeResult> JudgeAsync(JudgeRequest request) {
             // 채점 DB에서 추가적인 정보 받아와서 가공하고 사용하는 작업 필요
-            return Judge.JudgeHandler[request.Language](request);
+            return Judge.TaskJudgeHandler[request.Language](request);
         }
     }
 }
