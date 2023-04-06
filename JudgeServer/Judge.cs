@@ -386,7 +386,10 @@ namespace JudgeServer {
                 }
             }
 
-            // TODO : 폴더 삭제
+            // TODO : 폴더 삭제 (주석 풀면 됨)
+            //if (Directory.Exists(folderPath)) {
+            //    Directory.Delete(folderPath, true);
+            //}
 
             // 테스트 케이스를 통과하지 못함
             if (result.Result != JudgeResult.JResult.Accepted) {
