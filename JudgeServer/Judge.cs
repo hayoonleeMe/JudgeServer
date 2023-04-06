@@ -247,6 +247,9 @@ namespace JudgeServer {
             // 결과가 저장되는 경로
             string resultFilePath = Path.Combine(folderPath, "result.txt");
 
+            // 실행 시간과 메모리 사용량이 저장되는 경로
+            string statFilePath = Path.Combine(folderPath, "stat.txt");
+
             // 테스트 케이스 수행
             for (int i = 0; i < outputCases.Count(); i++) {
                 // 입력 케이스를 파일로 저장
@@ -320,17 +323,48 @@ namespace JudgeServer {
                     }
                 }
 
+                // 실행 시간과 메모리 사용량
+                double executionTime = 0;
+                long memoryUsage = 0;
+                if (File.Exists(statFilePath)) {
+                    string[] statLines = File.ReadAllLines(statFilePath);
+
+                    if (statLines.Length == 2) {
+                        // 문자열을 숫자로 변환하여 사용
+                        executionTime = double.Parse(statLines[0].Trim());
+                        //memoryUsage = long.Parse(statLines[1].Trim());
+
+                        Console.WriteLine($"실행시간:{executionTime} 메모리 사용량:{memoryUsage}");
+                    }
+                }
+
+                // 시간 초과
+                if (executionTime > executionTimeLimit) {
+                    Console.WriteLine($"[시간 초과] 실행시간:{executionTime} / 제한:{executionTimeLimit}");
+                       
+                    result.Result = JudgeResult.JResult.TimeLimitExceeded;
+                    break;
+                }
+
+                // 메모리 초과
+                if (memoryUsage > memoryUsageLimit) {
+                    Console.WriteLine($"[메모리 초과] 메모리 사용량:{memoryUsage} / 제한:{memoryUsageLimit}");
+
+                    result.Result = JudgeResult.JResult.MemoryLimitExceeded;
+                    break;
+                }
+
+                // 평균 실행 시간 및 메모리 사용량 계산
+                avgExecutionTime += executionTime;
+                avgMemoryUsage += memoryUsage;
+
                 // 출력 케이스와 결과 비교
                 string expectedOutput = outputCases[i];
                 string actualOutput = File.Exists(resultFilePath) ? File.ReadAllText(resultFilePath) : "";
-
-                // TODO : 시간 초과
-
-                // TODO : 메모리 초과
+                Console.WriteLine($"expected : {expectedOutput} / actual : {actualOutput}");
 
                 // 틀림
                 if (expectedOutput != actualOutput) {
-                    Console.WriteLine($"[WrongAnswer] expected : {expectedOutput} / actual : {actualOutput}");
 
                     result.Result = JudgeResult.JResult.WrongAnswer;
                     break;
