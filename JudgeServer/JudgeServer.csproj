@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <PackageReference Include="Docker.DotNet" Version="3.125.13" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="7.0.4" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.5.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
   </ItemGroup>

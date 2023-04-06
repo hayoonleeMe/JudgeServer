@@ -13,18 +13,10 @@ namespace JudgeServer.Controllers {
             Console.WriteLine("#문제 Id : " + request.Id);
             Console.WriteLine("#코드 : " + request.Code);
 
-            // 채점 작업을 수행하는 Task 등록
-            var judgeTask = Task<JudgeResult>.Run(() => JudgeAsync(request));
-            // Task가 끝날 때까지 대기하여 결과를 받음
-            JudgeResult result = await judgeTask;
+            // 코드를 채점한 결과를 받는다.
+            JudgeResult result = await Judge.JudgeHandler[request.Language](request);
 
             return Ok(result);
-        }
-
-        // 비동기로 채점을 수행함
-        private Task<JudgeResult> JudgeAsync(JudgeRequest request) {
-            // 채점 DB에서 추가적인 정보 받아와서 가공하고 사용하는 작업 필요
-            return Judge.TaskJudgeHandler[request.Language](request);
         }
     }
 }
