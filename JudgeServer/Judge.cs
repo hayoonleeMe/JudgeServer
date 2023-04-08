@@ -33,9 +33,9 @@ namespace JudgeServer {
             // 반환할 객체
             JudgeResult result = new JudgeResult();
 
+            // void GetTestCases(ref List<string> inputCases, ref List<string> outputCases, ref double executioNTimeLimit, ref long memoryUsageLimit);
             // TODO : 채점 DB에서 입출력 테스트 케이스, 실행 시간 제한, 메모리 사용량 제한 받아오기
             // TODO : 채점 DB에서 가져오는 값들이 교수가 과제를 등록할 때 정할 수 있다면, 정해진 값들만 사용하도록 코드 개선 필요
-
             // 입력 테스트 케이스
             List<string> inputCases = new List<string>() { "1 2", "5 9", "-3 3" };
             // 출력 테스트 케이스
@@ -44,7 +44,10 @@ namespace JudgeServer {
             double executionTimeLimit = 500;
             // 메모리 사용량(KB) 제한 - 512KB
             long memoryUsageLimit = 512;
+            // GetTestCases
 
+            // void CreateSubmitFolder(string language, ref string randomValue, ref string folderPath, ref string inputFilePath, ref string compileErrorFilePath, ref string runtimeErrorFilePath, ref string resultFilePath, ref string statFilePath);
+            // docker 까지 경로는 멤버변수로 저장
             // 채점 요청별로 랜덤 값 생성
             Random randomObj = new Random();
             string randomValue = randomObj.Next().ToString();
@@ -52,21 +55,11 @@ namespace JudgeServer {
             // 유저 전용 폴더 생성
             string folderPath = @"C:\Users\LeeHaYoon\Desktop\docker\c\" + randomValue;
 
-            // InitJudge(string folderPath, )
             // 폴더가 존재하지 않는 경우에만 폴더를 생성합니다.
             if (!Directory.Exists(folderPath)) {
                 Directory.CreateDirectory(folderPath);
                 Console.WriteLine($"폴더가 생성되었습니다: {folderPath}");
             }
-
-            // 코드를 파일로 저장
-            string codeFilePath = Path.Combine(folderPath, "Main.c");
-            File.WriteAllText(codeFilePath, request.Code);
-
-            // 테스트 케이스들의 평균 실행 시간과 메모리 사용량
-            // TODO : 메모리 사용량 측정 구현
-            double avgExecutionTime = 0;
-            long avgMemoryUsage = 0;
 
             // 입력 케이스가 저장되는 경로
             string inputFilePath = Path.Combine(folderPath, "input.txt");
@@ -76,32 +69,46 @@ namespace JudgeServer {
 
             // 런타임 에러 메시지의 경로
             string runtimeErrorFilePath = Path.Combine(folderPath, "runtimeError.txt");
-            //File.WriteAllText(runtimeErrorFilePath, "");
 
             // 결과가 저장되는 경로
             string resultFilePath = Path.Combine(folderPath, "result.txt");
 
             // 실행 시간과 메모리 사용량이 저장되는 경로
             string statFilePath = Path.Combine(folderPath, "stat.txt");
+            // CreateSubmitFolder
+
+            // void CreateCodeFile(string folderPath, string code, ref string codeFilePath);
+            // 코드를 파일로 저장
+            string codeFilePath = Path.Combine(folderPath, "Main.c");
+            File.WriteAllText(codeFilePath, request.Code);
+            // CreateCodeFile
 
             // Docker Hub에서의 이미지 이름과 태그
             string imageName = "leehayoon/judge";
             string imageTag = "c";
 
+            // void async InitDockerClient(string imageName, string imageTag, ref DockerClient? dockerClient, ref Dictionary<string, string>? volumeMapping);
             // Docker client 생성
-            using var dockerClient = new DockerClientConfiguration(new Uri("npipe://./pipe/docker_engine")).CreateClient();
+            var dockerClient = new DockerClientConfiguration(new Uri("npipe://./pipe/docker_engine")).CreateClient();
 
             // 이미지 다운로드
             await dockerClient.Images.CreateImageAsync(new ImagesCreateParameters { FromImage = imageName, Tag = imageTag }, new AuthConfig(), new Progress<JSONMessage>());
 
             // 볼륨 맵핑 - 로컬 유저 폴더 : 컨테이너 내부 유저 폴더
             var volumeMapping = new Dictionary<string, string> { { folderPath, $"/app/{randomValue}" } };
+            // InitDockerClient
+
+            // 테스트 케이스들의 평균 실행 시간과 메모리 사용량
+            // TODO : 메모리 사용량 측정 구현
+            double avgExecutionTime = 0;
+            long avgMemoryUsage = 0;
 
             // 테스트 케이스 수행
             for (int i = 0; i < outputCases.Count(); i++) {
                 // 입력 케이스를 파일로 저장
                 File.WriteAllText(inputFilePath, inputCases[i]);
 
+                // void async RunDockerContainer(string imageName, string imageTag, string randomValue, ref CreateContainerResponse? createContainerResponse);
                 // 컨테이너 생성
                 var createContainerResponse = await dockerClient.Containers.CreateContainerAsync(new CreateContainerParameters {
                     Image = $"{imageName}:{imageTag}",
@@ -110,9 +117,7 @@ namespace JudgeServer {
                     // 볼륨 설정
                     HostConfig = new HostConfig {
                         Binds = volumeMapping.Select(kv => $"{kv.Key}:{kv.Value}").ToList(),
-                    },
-                    AttachStderr = true,
-                    AttachStdout = true
+                    }
                 });
 
                 // 컨테이너 실행
@@ -121,7 +126,9 @@ namespace JudgeServer {
                 // 컨테이너 종료 및 삭제
                 await dockerClient.Containers.StopContainerAsync(createContainerResponse.ID, new ContainerStopParameters());
                 await dockerClient.Containers.RemoveContainerAsync(createContainerResponse.ID, new ContainerRemoveParameters());
+                // RunDockerContainer
 
+                // bool IsOccuredCompileError(string compileErrorFilePath, ref JudgeResult result);
                 // 컴파일 에러 발생
                 if (File.Exists(compileErrorFilePath)) {
                     string errorMsg = File.ReadAllText(compileErrorFilePath);
@@ -134,7 +141,9 @@ namespace JudgeServer {
                         break;
                     }
                 }
+                // bool IsOccuredCompileError(string compileErrorFilePath, ref JudgeResult result);
 
+                // bool IsOccuredRuntimeError(string runtimeErrorFilePath, ref JudgeResult result);
                 // 런타임 에러가 발생했는지 체크
                 if (File.Exists(runtimeErrorFilePath)) {
                     string errorMsg = File.ReadAllText(runtimeErrorFilePath);
@@ -147,8 +156,10 @@ namespace JudgeServer {
                         break;
                     }
                 }
+                // bool IsOccuredRuntimeError(string runtimeErrorFilePath, ref JudgeResult result);
 
                 // 실행 시간과 메모리 사용량
+                // void GetStats(string statFilePath, ref double executionTime, ref long memoryUsage);
                 double executionTime = 0;
                 long memoryUsage = 0;
                 if (File.Exists(statFilePath)) {
@@ -162,8 +173,9 @@ namespace JudgeServer {
                         Console.WriteLine($"실행시간:{executionTime} 메모리 사용량:{memoryUsage}");
                     }
                 }
+                // GetStats
 
-
+                // bool IsExceededTimeLimit(double executionTime, double executionTimeLimit, ref JudgeResult result);
                 // 시간 초과
                 if (executionTime > executionTimeLimit) {
                     Console.WriteLine($"[시간 초과] 실행시간:{executionTime} / 제한:{executionTimeLimit}");
@@ -171,7 +183,9 @@ namespace JudgeServer {
                     result.Result = JudgeResult.JResult.TimeLimitExceeded;
                     break;
                 }
+                // IsExceededTimeLimit
 
+                // bool IsExceededMemoryLimit(long memoryUsage, long memoryUsageLimit, ref JudgeResult result);
                 // 메모리 초과
                 if (memoryUsage > memoryUsageLimit) {
                     Console.WriteLine($"[메모리 초과] 메모리 사용량:{memoryUsage} / 제한:{memoryUsageLimit}");
@@ -179,11 +193,13 @@ namespace JudgeServer {
                     result.Result = JudgeResult.JResult.MemoryLimitExceeded;
                     break;
                 }
+                // IsExceededMemoryLimit
 
                 // 평균 실행 시간 및 메모리 사용량 계산
                 avgExecutionTime += executionTime;
                 avgMemoryUsage += memoryUsage;
 
+                // void JudgeTestCase(string outputCase, string resultFilePath, ref JudgeResult result);
                 // 출력 케이스와 결과 비교
                 string expectedOutput = outputCases[i];
                 string actualOutput = File.Exists(resultFilePath) ? File.ReadAllText(resultFilePath) : "";
@@ -191,16 +207,17 @@ namespace JudgeServer {
 
                 // 틀림
                 if (expectedOutput != actualOutput) {
-
                     result.Result = JudgeResult.JResult.WrongAnswer;
                     break;
                 }
 
                 // 맞음
                 result.Result = JudgeResult.JResult.Accepted;
+                // JudgeTestCase
 
                 Console.WriteLine($"{i + 1}번째 케이스 통과");
 
+                // void InitFile(string inputFilePath, string resultFilePath);
                 // 입력 파일 초기화
                 if (File.Exists(inputFilePath)) {
                     File.WriteAllText(inputFilePath, string.Empty);
@@ -210,13 +227,17 @@ namespace JudgeServer {
                 if (File.Exists(resultFilePath)) {
                     File.WriteAllText(resultFilePath, string.Empty); 
                 }
+                // InitFile
             }
 
+            // void DeleteSubmitFolder(string folderPath);
             // TODO : 폴더 삭제 (주석 풀면 됨)
             //if (Directory.Exists(folderPath)) {
             //    Directory.Delete(folderPath, true);
             //}
+            // void DeleteSubmitFolder
 
+            // JudgeResult GetJudgeResult(ref JudgeResult result);
             // 테스트 케이스를 통과하지 못함
             if (result.Result != JudgeResult.JResult.Accepted) {
                 return result;
@@ -237,6 +258,7 @@ namespace JudgeServer {
             result.MemoryUsage = avgMemoryUsage;
 
             return result;
+            // GetJudgeResult
         }
 
         // C++ 코드 채점
