@@ -4,9 +4,8 @@ using System.Diagnostics;
 using System.Reflection;
 using Docker.DotNet;
 using Docker.DotNet.Models;
-using System.ComponentModel;
-using System.Text;
-using System;
+using SharpCompress.Readers;
+using SharpCompress.Readers.Tar;
 
 namespace JudgeServer {
     public class Judge {
@@ -30,172 +29,6 @@ namespace JudgeServer {
                 { C, JudgeCAsync }, { CPP, JudgeCppAsync }, { CSHARP, JudgeCSharpAsync }, { JAVA, JudgeJavaAsync }, { PYTHON, JudgePythonAsync },};
         }
 
-        // C 코드 채점
-        private static JudgeResult JudgeCLocal(JudgeRequest request) {
-            // 반환할 객체
-            JudgeResult result = new JudgeResult();
-
-            // TODO : 채점 DB에서 입출력 테스트 케이스, 실행 시간 제한, 메모리 사용량 제한 받아오기
-            // TODO : 채점 DB에서 가져오는 값들이 교수가 과제를 등록할 때 정할 수 있다면, 정해진 값들만 사용하도록 코드 개선 필요
-            // 입력 테스트 케이스
-            List<string> inputCases = new List<string>() { "1 2", "5 9", "-3 3" };
-            // 출력 테스트 케이스
-            List<string> outputCases = new List<string>() { "3", "14", "0" };
-            // 실행 시간(ms) 제한 - 500ms
-            double executionTimeLimit = 500;
-            // 메모리 사용량(B) 제한 - 512B
-            long memoryUsageLimit = 512;
-
-            // .c 파일이 저장될 경로
-            string cFilePath = Environment.CurrentDirectory + "\\file.c";
-            // .c 파일의 실행 파일인 .exe 파일이 저장될 경로
-            string exeFilePath = Environment.CurrentDirectory + "\\file.exe";
-            // 전달받은 코드로 .c 파일 생성하기
-            File.WriteAllText(cFilePath, request.Code);
-
-            // 컴파일러 경로
-            string gccCompilerPath = "C:\\MinGW\\bin\\gcc";
-            
-            // C11 컴파일러를 실행하여 C 코드를 컴파일하여 실행 파일 생성
-            ProcessStartInfo compilePsi = new ProcessStartInfo(gccCompilerPath, cFilePath + " -o" + exeFilePath + " -O2 -Wall -lm -static -std=gnu11");
-            compilePsi.RedirectStandardOutput = true;
-            compilePsi.RedirectStandardError = true;
-            compilePsi.UseShellExecute = false;
-            Process? compileProcess = Process.Start(compilePsi);
-
-            // 예외처리 필요
-            compileProcess.WaitForExit();
-
-            // 컴파일 에러
-            if (compileProcess.ExitCode != 0) {
-                string errors = compileProcess.StandardError.ReadToEnd();
-                Console.WriteLine("Compile Failed");
-                Console.WriteLine($"{errors}");
-
-                result.Result = JudgeResult.JResult.CompileError;
-                result.Message = errors;
-                return result;
-            }
-            // 컴파일 성공
-            else {
-                Console.WriteLine("Compile Successed");
-            }
-
-            // 테스트 케이스들의 평균 실행 시간과 메모리 사용량
-            double avgExecutionTime = 0;
-            long avgMemoryUsage = 0;
-
-            // 생성된 실행 파일을 테스트 케이스 만큼 실행
-            for (int i = 0; i < inputCases.Count(); i++) {
-                Console.WriteLine(i + "번째 테스트 케이스 시작");
-                ProcessStartInfo executePsi = new ProcessStartInfo(exeFilePath);
-                executePsi.RedirectStandardOutput = true;
-                executePsi.RedirectStandardError = true;
-                executePsi.RedirectStandardInput = true;
-                executePsi.UseShellExecute = false;
-                Process? executeProcess = Process.Start(executePsi);
-
-                // 예외처리 필요
-                // input case 적용
-                using (StreamWriter writer2 = executeProcess.StandardInput) {
-                    writer2.Write(inputCases[i]);
-                }
-
-                // 스톱워치 시작
-                Stopwatch watch = new Stopwatch();
-                watch.Start();
-
-                // 프로세스 실행 전의 메모리 사용량 측정
-                long memoryUsageBefore = executeProcess.WorkingSet64;
-
-                // 프로세스 실행
-                executeProcess.WaitForExit();
-
-                // 스톱워치를 멈춰 걸린 시간으로 실행 시간 측정
-                watch.Stop();
-                double executionTime = watch.ElapsedMilliseconds;
-                avgExecutionTime += executionTime;
-
-                // 프로세스 실행 후의 메모리 사용량 측정
-                long memoryUsageAfter = executeProcess.WorkingSet64;
-
-                // 메모리 사용량 계산
-                long memoryUsage = memoryUsageAfter - memoryUsageBefore;
-                avgMemoryUsage += memoryUsage;
-
-                // 실행 실패 - 런타임 에러
-                if (executeProcess.ExitCode != 0) {
-                    string errors = executeProcess.StandardError.ReadToEnd();
-                    Console.WriteLine("Runtime Error");
-                    Console.WriteLine(errors);
-
-                    result.Result = JudgeResult.JResult.RuntimeError;
-                    result.Message = errors;
-                    break;
-                }
-                // 실행 성공
-                else {
-                    string output = executeProcess.StandardOutput.ReadToEnd();
-
-                    // TODO : 추가적으로 채점 수행 필요
-                    // 시간 초과
-                    if (executionTime > executionTimeLimit) {
-                        Console.WriteLine("시간 초과");
-
-                        result.Result = JudgeResult.JResult.TimeLimitExceeded;
-                        break;
-                    }
-
-                    // 메모리 사용량 초과
-                    if (memoryUsage > memoryUsageLimit) {
-                        Console.WriteLine("메모리 사용량 초과");
-
-                        result.Result = JudgeResult.JResult.MemoryLimitExceeded;
-                        break;
-                    }
-
-                    Console.WriteLine("output : " + output);
-                    Console.WriteLine("outputCase : " + outputCases[i]);
-
-                    // 정답 맞춤
-                    if (output == outputCases[i]) {
-                        Console.WriteLine(i + "번째 테스트 케이스가 맞았습니다.");
-
-                        result.Result = JudgeResult.JResult.Accepted;
-                    }
-                    // 정답 틀림
-                    else {
-                        Console.WriteLine(i + "번째 테스트 케이스가 틀렸습니다.");
-
-                        result.Result = JudgeResult.JResult.WrongAnswer;
-                        break;
-                    }
-                }
-            }
-
-            // 생성했던 파일 삭제
-            File.Delete(cFilePath);
-            File.Delete(exeFilePath);
-
-            // 테스트 케이스를 통과하지 못하여 break로 for문을 빠져나온 상태
-            if (result.Result != JudgeResult.JResult.Accepted) {
-                return result;
-            }
-            // 모든 테스트 케이스를 통과
-            else {
-                avgExecutionTime /= inputCases.Count();
-                avgMemoryUsage /= inputCases.Count();
-
-                Console.WriteLine("avgExecutionTime : " + avgExecutionTime);
-                Console.WriteLine("avgMemoryUsage : " + avgMemoryUsage);
-
-                result.ExecutionTime = avgExecutionTime;
-                result.MemoryUsage = avgMemoryUsage;
-
-                return result;
-            }
-        }
-
         private static async Task<JudgeResult> JudgeCAsync(JudgeRequest request) {
             // 반환할 객체
             JudgeResult result = new JudgeResult();
@@ -209,7 +42,7 @@ namespace JudgeServer {
             List<string> outputCases = new List<string>() { "3", "14", "0" };
             // 실행 시간(ms) 제한 - 500ms
             double executionTimeLimit = 500;
-            // 메모리 사용량(B) 제한 - 512B
+            // 메모리 사용량(KB) 제한 - 512KB
             long memoryUsageLimit = 512;
 
             // 채점 요청별로 랜덤 값 생성
@@ -219,19 +52,19 @@ namespace JudgeServer {
             // 유저 전용 폴더 생성
             string folderPath = @"C:\Users\LeeHaYoon\Desktop\docker\c\" + randomValue;
 
+            // InitJudge(string folderPath, )
             // 폴더가 존재하지 않는 경우에만 폴더를 생성합니다.
             if (!Directory.Exists(folderPath)) {
-                // 폴더를 생성합니다.
                 Directory.CreateDirectory(folderPath);
                 Console.WriteLine($"폴더가 생성되었습니다: {folderPath}");
             }
 
             // 코드를 파일로 저장
-            string codeFilePath = Path.Combine(folderPath, "code.c");
+            string codeFilePath = Path.Combine(folderPath, "Main.c");
             File.WriteAllText(codeFilePath, request.Code);
 
             // 테스트 케이스들의 평균 실행 시간과 메모리 사용량
-            // TODO : 실행 시간과 메모리 사용량 계산 구현
+            // TODO : 메모리 사용량 측정 구현
             double avgExecutionTime = 0;
             long avgMemoryUsage = 0;
 
@@ -243,6 +76,7 @@ namespace JudgeServer {
 
             // 런타임 에러 메시지의 경로
             string runtimeErrorFilePath = Path.Combine(folderPath, "runtimeError.txt");
+            //File.WriteAllText(runtimeErrorFilePath, "");
 
             // 결과가 저장되는 경로
             string resultFilePath = Path.Combine(folderPath, "result.txt");
@@ -250,49 +84,40 @@ namespace JudgeServer {
             // 실행 시간과 메모리 사용량이 저장되는 경로
             string statFilePath = Path.Combine(folderPath, "stat.txt");
 
+            // Docker Hub에서의 이미지 이름과 태그
+            string imageName = "leehayoon/judge";
+            string imageTag = "c";
+
+            // Docker client 생성
+            using var dockerClient = new DockerClientConfiguration(new Uri("npipe://./pipe/docker_engine")).CreateClient();
+
+            // 이미지 다운로드
+            await dockerClient.Images.CreateImageAsync(new ImagesCreateParameters { FromImage = imageName, Tag = imageTag }, new AuthConfig(), new Progress<JSONMessage>());
+
+            // 볼륨 맵핑 - 로컬 유저 폴더 : 컨테이너 내부 유저 폴더
+            var volumeMapping = new Dictionary<string, string> { { folderPath, $"/app/{randomValue}" } };
+
             // 테스트 케이스 수행
             for (int i = 0; i < outputCases.Count(); i++) {
                 // 입력 케이스를 파일로 저장
                 File.WriteAllText(inputFilePath, inputCases[i]);
 
-                // Docker Hub에서의 이미지 이름과 태그
-                string imageName = "leehayoon/judge";
-                string imageTag = "c";
-
-                // Docker client 생성
-                using var dockerClient = new DockerClientConfiguration(new Uri("npipe://./pipe/docker_engine")).CreateClient();
-
-                // 이미지 다운로드
-                await dockerClient.Images.CreateImageAsync(new ImagesCreateParameters { FromImage = imageName, Tag = imageTag }, new AuthConfig(), new Progress<JSONMessage>());
-
-                // 볼륨 맵핑 - 로컬 유저 폴더 : 컨테이너 내부 유저 폴더
-                var volumeMapping = new Dictionary<string, string>
-                 {
-                     { folderPath, $"/app/{randomValue}" }
-                 };
-
                 // 컨테이너 생성
                 var createContainerResponse = await dockerClient.Containers.CreateContainerAsync(new CreateContainerParameters {
                     Image = $"{imageName}:{imageTag}",
-                    Tty = true,
                     // 환경 변수 설정
                     Env = new List<string> { "DIR_NAME=" + randomValue },
                     // 볼륨 설정
                     HostConfig = new HostConfig {
-                        Binds = volumeMapping.Select(kv => $"{kv.Key}:{kv.Value}").ToList()
-                    }
+                        Binds = volumeMapping.Select(kv => $"{kv.Key}:{kv.Value}").ToList(),
+                    },
+                    AttachStderr = true,
+                    AttachStdout = true
                 });
 
                 // 컨테이너 실행
                 await dockerClient.Containers.StartContainerAsync(createContainerResponse.ID, new ContainerStartParameters());
 
-                // 컨테이너 로그
-                var logs = await dockerClient.Containers.GetContainerLogsAsync(createContainerResponse.ID, new ContainerLogsParameters { ShowStdout = true, ShowStderr = true });
-                using (var reader = new StreamReader(logs)) {
-                    string log = reader.ReadToEnd();
-                    Console.WriteLine(log);
-                }
-                
                 // 컨테이너 종료 및 삭제
                 await dockerClient.Containers.StopContainerAsync(createContainerResponse.ID, new ContainerStopParameters());
                 await dockerClient.Containers.RemoveContainerAsync(createContainerResponse.ID, new ContainerRemoveParameters());
@@ -300,7 +125,7 @@ namespace JudgeServer {
                 // 컴파일 에러 발생
                 if (File.Exists(compileErrorFilePath)) {
                     string errorMsg = File.ReadAllText(compileErrorFilePath);
-                    
+
                     if (errorMsg.Length != 0) {
                         Console.WriteLine("Compile Error Occured : ", errorMsg);
 
@@ -337,6 +162,7 @@ namespace JudgeServer {
                         Console.WriteLine($"실행시간:{executionTime} 메모리 사용량:{memoryUsage}");
                     }
                 }
+
 
                 // 시간 초과
                 if (executionTime > executionTimeLimit) {
